@@ -1,0 +1,15 @@
+{
+  "name": "unverify",
+  "version": "1.0.0",
+  "description": "libunverify VK",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "kyoka",
+  "license": "ISC",
+  "dependencies": {
+    "express": "^4.19.2",
+    "frida": "^16.2.1"
+  }
+}
