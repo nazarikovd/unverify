@@ -7,21 +7,7 @@ let Happ_id;
 let Hready = false;
 
 Java.perform(() => {
-	let m = Java.use("ru.mail.libverify.storage.m");
-	m["a"].implementation = function(context, commonContext, apiManager, str, str2) {
-		hContext = Java.retain(context)
-		hCContext = Java.retain(commonContext)
-		hApiManager = Java.retain(apiManager)
-		hFunction = Java.retain(this)
-		let result = this["a"](context, commonContext, apiManager, str, str2);
-		if (!Hready) {
-			send({
-				"type": "ready"
-			})
-			Hready = true
-		}
-		return result;
-	};
+
 	let RequestBase = Java.use("ru.mail.verify.core.requests.RequestBase");
 	RequestBase["addUrlParam"].implementation = function(sb, entry) {
 		if (sb.toString().includes('system_id')) {
@@ -32,11 +18,37 @@ Java.perform(() => {
 		}
 		this["addUrlParam"](sb, entry);
 	};
+
+	let m = Java.use("ru.mail.libverify.storage.m");
+	m["a"].implementation = function(context, commonContext, apiManager, str, str2) {
+		hContext = Java.retain(context)
+		hCContext = Java.retain(commonContext)
+		hApiManager = Java.retain(apiManager)
+		hFunction = Java.retain(this)
+		let result = this["a"](context, commonContext, apiManager, str, str2);
+		let readyInterval = setInterval(() => {
+			if(Hsystem_id && Happ_id && !Hready){
+				clearInterval(readyInterval)
+				send({
+					"type": "ready",
+					"creds": {
+						"system_id": Hsystem_id,
+						"application_id": Happ_id
+					}
+				})
+				Hready = true
+			}
+		}, 100)
+		return result;
+	};
+	
 })
 recv('data', onData);
 
 function onData(value) {
+
 	let data = value.payload;
+	let unic = data.unic
 	let result = hFunction["a"](hContext, hCContext, hApiManager, data.s, data.p);
 	let ret = {
 		"application": "VK",
@@ -54,7 +66,8 @@ function onData(value) {
 	}
 	send({
 		"type": "request",
-		"json": ret
+		"json": ret,
+		"unic": unic
 	})
 	recv('data', onData);
 }

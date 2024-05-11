@@ -13,18 +13,18 @@ module.exports = class unverify{
 		this.device = null
 		this.pid = null
 		this.readyhttp = null
-		this.currentRequest = {
-			"session_id": null,
-			"phone": null,
-			"external_id": null
-		}
-		this.dataToSend = null
+		this.datatosend = []
 		this.app = express()
 		this.port = port
 		this.package = 'com.vkontakte.android'
+		this.devicecreds = {
+			"system_id": null,
+			"application_id": null
+		}
 	}
 
 	async init(){
+
 		let self = this
 		this.readyhttp = false
 
@@ -65,25 +65,29 @@ module.exports = class unverify{
 
 	async initAPI(){
 
-		this.app.get('/', (req, res) => {
-
+		this.app.get('/verify', (req, res) => {
+			
 			if (!this.readyhttp) {
 				res.send({
 					"error": "libverify is not ready. Goto "+this.package+" and send registration request"
 				})
 				return
 			}
-
+			let currentRequest = {
+				"session_id": null,
+				"phone": null,
+				"external_id": null,
+				"unic": Math.floor(Math.random()*100000000000)
+			}
 			if (req.query.session_id) {
-				this.currentRequest.session_id = req.query.session_id
+				currentRequest.session_id = req.query.session_id
 			} else {
 				res.send({
 					"error": "session_id cant be empty"
 				})
-				return
-			}
+				return			}
 			if (req.query.phone) {
-				this.currentRequest.phone = req.query.phone
+				currentRequest.phone = req.query.phone
 			} else {
 				res.send({
 					"error": "phone cant be empty"
@@ -91,29 +95,32 @@ module.exports = class unverify{
 				return
 			}
 			if (req.query.external_id) {
-				this.currentRequest.external_id = req.query.external_id
+				currentRequest.external_id = req.query.external_id
 			}
 
 			if (this.script) {
 				this.script.post({
 					'type': 'data',
 					'payload': {
-						s: this.currentRequest.session_id,
-						p: this.currentRequest.phone
+						s: currentRequest.session_id,
+						p: currentRequest.phone,
+						unic: currentRequest.unic
 					}
 				})
 
 				let inter = setInterval(() => {
-					if (this.datatosend) {
+					let needData = this.datatosend.filter((data) => data.unic == currentRequest.unic);
+					if (needData[0]) {
+						this.datatosend = this.datatosend.filter((data) => data.unic != currentRequest.unic)
 						clearInterval(inter)
-						let json = this.datatosend.json
-						if (this.currentRequest.external_id) {
-							json.external_id = this.currentRequest.external_id
+						let json = needData[0].json
+						if (currentRequest.external_id) {
+							json.external_id = currentRequest.external_id
 						}
 						let url = this.getUrlAndSign(json)
-						this.cleanRequest()
 						res.send({
 							"success": true,
+							"unic": currentRequest.unic,
 							"json": json,
 							"url": url
 						})
@@ -123,6 +130,62 @@ module.exports = class unverify{
 			} else {
 				console.log('err: script not loaded?', 1)
 			}
+		})
+
+		this.app.get('/attempt', (req, res) => {
+			let currentRequest = {
+				"session_id": null,
+				"phone": null,
+				"code": null,
+				"unic": Math.floor(Math.random()*100000000000)
+			}
+			if (!this.readyhttp) {
+				res.send({
+					"error": "libverify is not ready. Goto "+this.package+" and send registration request"
+				})
+				return
+			}
+			if (req.query.session_id) {
+				currentRequest.session_id = req.query.session_id
+			} else {
+				res.send({
+					"error": "session_id cant be empty"
+				})
+				return			}
+			if (req.query.phone) {
+				currentRequest.phone = req.query.phone
+			} else {
+				res.send({
+					"error": "phone cant be empty"
+				})
+				return
+			}
+			if (req.query.code) {
+				currentRequest.code = req.query.code
+			} else {
+				res.send({
+					"error": "code cant be empty"
+				})
+				return
+			}
+			let json = {
+				"application": "VK",
+				"application_id": this.devicecreds.application_id,
+				"code": currentRequest.code,
+				"code_source": "USER_INPUT",
+				"id": currentRequest.session_id,
+				"internal": "verify",
+				"language": "en_US",
+				"phone": currentRequest.phone,
+				"platform": "android",
+				"service": "vk_registration",
+			}
+			let url = this.getUrlAndSign(json, "attempt")
+			res.send({
+				"unic": currentRequest.unic,
+				"json": json,
+				"url": url
+			})
 		})
 		this.app.listen(this.port, () => {
   		})
@@ -134,13 +197,16 @@ module.exports = class unverify{
 				switch (msg.payload.type) {
 					case 'ready':
 						this.readyhttp = true
-						this.updateState('libverify is ready', 2)
+						this.devicecreds = msg.payload.creds
+						this.updateState(`libverify is ready\nsystem_id: ${this.devicecreds.system_id}\napplication_id: ${this.devicecreds.application_id}\n`, 2)
 						break;
 					case 'request':
 						let json = msg.payload.json
-						this.datatosend = {
+						let unic = msg.payload.unic
+						this.datatosend.push({
 							"json": json,
-						}
+							"unic": unic
+						})
 						break;
 					default:
 						console.log(msg)
@@ -162,7 +228,7 @@ module.exports = class unverify{
 		this.updateState('waiting for registration request...\ngo to '+this.package+' and send one', 3)
 	}
 
-	getUrlAndSign(data) {
+	getUrlAndSign(data, method='verify') {
 		let MD5 = function(d) {
 			var r = M(V(Y(X(d), 8 * d.length)));
 			return r.toLowerCase()
@@ -232,19 +298,9 @@ module.exports = class unverify{
 		let pars
 		pars = p.replace(/&/g, "");
 		pars = pars.replace(/=/g, "");
-		let method = "verify"
 		let next = method + pars + '506e786f377863526a7558536c644968'
 		let sign = MD5(next)
 		return 'https://clientapi.mail.ru/fcgi-bin/' + method + '?' + p + '&signature=' + sign
-	}
-
-	cleanRequest(){
-		this.currentRequest = {
-			"session_id": null,
-			"phone": null,
-			"external_id": null
-		}
-		this.datatosend - null
 	}
 
 	stop(self, detached = false, reason = null) {
